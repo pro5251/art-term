@@ -9,7 +9,5 @@ fn main() {
             "private runtime bootstrap is retired; create or import connections in the App"
         );
     }
-    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    std::fs::write(out.join("runtime_bootstrap.rs"), "pub(crate) const PRIVATE_RUNTIME_BOOTSTRAP: Option<crate::runtime_bootstrap::Seed> = None;\n").expect("cannot write retired bootstrap declaration");
     tauri_build::build()
 }

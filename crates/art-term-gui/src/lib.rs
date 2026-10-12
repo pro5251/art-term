@@ -5,8 +5,6 @@ mod android_operator;
 #[cfg(target_os = "android")]
 mod mobile;
 #[cfg(target_os = "android")]
-mod runtime_bootstrap;
-#[cfg(target_os = "android")]
 mod runtime_hosts;
 #[cfg(target_os = "android")]
 mod runtime_sessions;

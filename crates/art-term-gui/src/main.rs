@@ -2,7 +2,6 @@
 
 #[cfg(windows)]
 mod dpapi;
-mod runtime_bootstrap;
 mod runtime_hosts;
 mod runtime_sessions;
 mod runtime_transfer;

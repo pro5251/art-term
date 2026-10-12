@@ -6,19 +6,117 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $productVersion = (Get-Content -LiteralPath (Join-Path $projectRoot 'crates/art-term-gui/tauri.conf.json') -Raw | ConvertFrom-Json).version
-if (-not $OutputPath) { $OutputPath = Join-Path $projectRoot "dist/windows/art-term-$productVersion" }
-$outputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+$defaultOutput = -not $OutputPath
+if ($defaultOutput) { $OutputPath = Join-Path $projectRoot "dist/windows/art-term-$productVersion" }
+$packagePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 $ConfigPath = (Resolve-Path -LiteralPath $ConfigPath).Path
-if ((Test-Path -LiteralPath $outputRoot) -and (Get-ChildItem -LiteralPath $outputRoot -Force | Measure-Object).Count -gt 0) {
-    throw 'OutputPath must be new or empty; preserve previously delivered packages.'
+if ((Test-Path -LiteralPath $packagePath) -and -not (Test-Path -LiteralPath $packagePath -PathType Container)) {
+    throw "OutputPath is not a directory: $packagePath"
+}
+$hasExistingPackage = $false
+if (Test-Path -LiteralPath $packagePath) {
+    $hasExistingPackage = [bool](Get-ChildItem -LiteralPath $packagePath -Force | Select-Object -First 1)
+}
+if ($hasExistingPackage -and -not $defaultOutput) {
+    throw "OutputPath already contains files: $packagePath. Choose a new or empty directory."
+}
+$outputRoot = $packagePath
+if ($hasExistingPackage) {
+    $outputRoot = Join-Path (Split-Path -Parent $packagePath) ".$(Split-Path -Leaf $packagePath).staging-$([guid]::NewGuid().ToString('N'))"
+    if (Test-Path -LiteralPath $outputRoot) { throw "Temporary package directory already exists: $outputRoot" }
 }
 . "$PSScriptRoot/build-paths.ps1"
+function Get-VsInstallation {
+    param([string]$Vswhere, [switch]$RequireCpp)
+    if (-not (Test-Path -LiteralPath $Vswhere)) { return $null }
+    $args = @('-latest', '-products', '*', '-property', 'installationPath')
+    if ($RequireCpp) { $args += @('-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64') }
+    $installation = & $Vswhere @args
+    if (-not $installation) { $installation = & $Vswhere @args -prerelease }
+    return $installation
+}
+function Invoke-VsInstaller {
+    param([string]$Installation, [ValidateSet('modify', 'repair')][string]$Operation)
+    $setup = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/setup.exe'
+    if (-not (Test-Path -LiteralPath $setup)) { throw "Visual Studio Installer was not found at $setup." }
+    $arguments = "$Operation --installPath `"$Installation`" --passive"
+    if ($Operation -eq 'modify') {
+        $arguments += ' --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+    }
+    Write-Host "Visual Studio Installer: $Operation $Installation (administrator approval may be required)..."
+    $result = Start-Process -FilePath $setup -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+    if ($result.ExitCode -notin @(0, 3010)) { throw "Visual Studio Installer $Operation failed (exit code $($result.ExitCode))." }
+}
+function Install-MsvcBuildTools {
+    param([string]$Vswhere)
+    $existing = Get-VsInstallation -Vswhere $Vswhere
+    if ($existing) {
+        Write-Host "Adding the C++ workload and Windows SDK to $existing (administrator approval may be required)..."
+        Invoke-VsInstaller -Installation $existing -Operation modify
+    } else {
+        $winget = Get-Command winget.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        Write-Host 'Installing Visual Studio Build Tools with the C++ workload and Windows SDK (administrator approval may be required)...'
+        if ($winget) {
+            & $winget.Source install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget --accept-package-agreements --accept-source-agreements --override '--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart --wait'
+            if ($LASTEXITCODE -ne 0) { throw "Visual Studio Build Tools installation failed (exit code $LASTEXITCODE)." }
+        } else {
+            $bootstrapper = Join-Path $env:TEMP "art-term-vs-buildtools-$([guid]::NewGuid().ToString('N')).exe"
+            try {
+                Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vs_buildtools.exe' -OutFile $bootstrapper -UseBasicParsing
+                $signature = Get-AuthenticodeSignature -LiteralPath $bootstrapper
+                if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+                    throw 'Downloaded Visual Studio Build Tools bootstrapper does not have a valid Microsoft signature.'
+                }
+                $arguments = '--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart --wait'
+                $result = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+                if ($result.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed (exit code $($result.ExitCode))." }
+            } finally {
+                if (Test-Path -LiteralPath $bootstrapper) { Remove-Item -LiteralPath $bootstrapper -Force }
+            }
+        }
+    }
+}
+function Initialize-MsvcBuildEnvironment {
+    $linkerOverride = [Environment]::GetEnvironmentVariable('CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER')
+    # Respect an explicitly configured Cargo linker and toolchain environment.
+    if ($linkerOverride) { return }
+    $linker = Get-Command link.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($linker -and $env:VSCMD_VER -and $env:WindowsSdkDir -and
+        (Get-Item -LiteralPath $linker.Source).VersionInfo.CompanyName -match '^Microsoft') { return }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $installation = Get-VsInstallation -Vswhere $vswhere -RequireCpp
+    if (-not $installation) {
+        Install-MsvcBuildTools -Vswhere $vswhere
+        $installation = Get-VsInstallation -Vswhere $vswhere -RequireCpp
+        if (-not $installation) { throw 'Visual Studio C++ tools are still unavailable after installation. Check Visual Studio Installer logs.' }
+    }
+    $devShell = Join-Path $installation 'Common7/Tools/Launch-VsDevShell.ps1'
+    if (-not (Test-Path -LiteralPath $devShell)) {
+        Invoke-VsInstaller -Installation $installation -Operation repair
+        if (-not (Test-Path -LiteralPath $devShell)) {
+            throw "Visual Studio Developer PowerShell is still missing at $devShell after repair. Check Visual Studio Installer logs."
+        }
+    }
+    & $devShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
+    $linker = Get-Command link.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $linker -or (Get-Item -LiteralPath $linker.Source).VersionInfo.CompanyName -notmatch '^Microsoft') {
+        $found = if ($linker) { $linker.Source } else { '(none)' }
+        throw "Visual Studio environment did not select the Microsoft linker; first link.exe: $found. Check the C++ build tools installation and PATH."
+    }
+    if (-not $env:WindowsSdkDir) {
+        Invoke-VsInstaller -Installation $installation -Operation modify
+        & $devShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
+        if (-not $env:WindowsSdkDir) { throw 'Windows SDK is still unavailable after installation. Check Visual Studio Installer logs.' }
+    }
+}
 $previousRustFlags = $env:CARGO_ENCODED_RUSTFLAGS
 $previousConfig = $env:ART_TERM_CONNECTIONS_FILE
 $env:CARGO_ENCODED_RUSTFLAGS = Get-ArtTermBuildRustFlags -ProjectRoot $projectRoot
 $env:ART_TERM_CONNECTIONS_FILE = $ConfigPath
 try {
     if (-not $SkipBuild) {
+        Initialize-MsvcBuildEnvironment
         Push-Location (Join-Path $projectRoot 'apps/desktop')
         try {
             & npm.cmd ci
@@ -61,7 +159,51 @@ try {
     }
     [ordered]@{platform='windows-x64';version=$productVersion;configuration_sha256=(Get-FileHash -LiteralPath (Join-Path $outputRoot 'connections.toml')).Hash.ToLowerInvariant();build=if($SkipBuild){'existing binary; verify source separately'}else{'cargo build -p art-term-gui --release --locked'};files=@($manifest)} |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $outputRoot 'manifest.json') -Encoding UTF8
-    Write-Output "Windows package: $outputRoot"
+    if ($hasExistingPackage) {
+        $packageParent = Split-Path -Parent $packagePath
+        $backupRoot = Join-Path $packageParent '.previous'
+        New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+        $backupName = "$(Split-Path -Leaf $packagePath)-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        $backupPath = Join-Path $backupRoot $backupName
+        $suffix = 2
+        while (Test-Path -LiteralPath $backupPath) {
+            $backupPath = Join-Path $backupRoot "$backupName-$suffix"
+            $suffix++
+        }
+        # Keep every directory move inside the package parent.
+        $parentPrefix = [IO.Path]::GetFullPath($packageParent).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        foreach ($path in @($packagePath, $outputRoot, $backupPath)) {
+            if (-not [IO.Path]::GetFullPath($path).StartsWith($parentPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw ('Package path is outside {0}: {1}' -f $packageParent, $path)
+            }
+        }
+        foreach ($directory in @($packageParent, $backupRoot)) {
+            if ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing to move a package through a directory link: $directory"
+            }
+        }
+        if ((Get-Item -LiteralPath $packagePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to move a package directory link: $packagePath"
+        }
+        Move-Item -LiteralPath $packagePath -Destination $backupPath
+        try {
+            if (Test-Path -LiteralPath $packagePath) { throw "Package destination is occupied: $packagePath" }
+            Move-Item -LiteralPath $outputRoot -Destination $packagePath
+        } catch {
+            $publishError = $_
+            if (Test-Path -LiteralPath $packagePath) {
+                throw "Publishing failed: $publishError. Previous package remains at $backupPath; destination is occupied."
+            }
+            try {
+                Move-Item -LiteralPath $backupPath -Destination $packagePath
+            } catch {
+                throw "Publishing failed: $publishError. Previous package remains at $backupPath; restore it manually."
+            }
+            throw $publishError
+        }
+        Write-Output "Previous Windows package: $backupPath"
+    }
+    Write-Output "Windows package: $packagePath"
 } finally {
     $env:ART_TERM_CONNECTIONS_FILE = $previousConfig
     $env:CARGO_ENCODED_RUSTFLAGS = $previousRustFlags

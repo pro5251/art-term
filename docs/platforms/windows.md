@@ -36,7 +36,7 @@ Windows PC                                      Remote Host
 
 AI 的測試分層、功能對照與操作細節見 [Windows 回歸測試](windows-regression.md)。
 
-建置需要 PowerShell、Git、Rust MSVC、Visual Studio C++ Build Tools、Node/npm。前端檢查確認畫面程式可用，Rust 測試檢查共用核心，最後封裝把兩者組成同一份 Windows 交付。一般單元測試與 fixture（隔離的模擬環境）不需要私人 Host；它們不能驗證正式 Host 的 TLS 或真實網路。
+建置需要 PowerShell、Git、Rust MSVC、Node/npm；打包腳本會檢查 Visual Studio C++ Build Tools 與 Windows SDK，缺少時透過 WinGet（或 Microsoft 官方安裝程式）安裝 Build Tools，或用 Visual Studio Installer 對既有安裝補上「Desktop development with C++」工作負載及建議元件。首次安裝需要網路及 Windows 系統管理員核准，且應先關閉正在執行的 Visual Studio。可從一般 PowerShell 執行；腳本會載入 x64 Developer PowerShell 環境，並確認選到 Microsoft linker 與 Windows SDK。前端檢查確認畫面程式可用，Rust 測試檢查共用核心，最後封裝把兩者組成同一份 Windows 交付。一般單元測試與 fixture（隔離的模擬環境）不需要私人 Host；它們不能驗證正式 Host 的 TLS 或真實網路。
 
 ```text
 Vue / TypeScript ----> frontend checks / build --+
@@ -57,11 +57,15 @@ cargo check -p art-term-gui --locked
 .\scripts\package-windows.ps1
 ```
 
-打包預設公開空設定，輸出 `dist/windows/art-term-0.1.23`；輸出需為新建或空目錄，保留既有交付。自訂交付 TOML：
+打包預設公開空設定，輸出固定名稱 `dist/windows/art-term-<version>`（目前為 `art-term-0.1.23`）；正式 release 使用 `art-term-<version>-windows-x64`。同版本重跑時，腳本先在暫存目錄完成新包，再把舊包移到 `dist/windows/.previous/`，將新包放回固定名稱；建置失敗不會動到舊包。明確指定 `-OutputPath` 時，仍須選新建或空目錄。自訂交付 TOML：
 
 ```powershell
 .\scripts\package-windows.ps1 -ConfigPath C:/art-term-private/connections.toml -OutputPath ./dist/windows/private-test-0.1.23
 ```
+
+### 在乾淨 Windows VM 驗證首次安裝
+
+使用 [Windows 測試 VM 操作手冊](../../scripts/windows-test-vm/README.md)與同目錄的 `windows-test-vm.ps1`，從 Windows 11 ISO 建立沒有 Visual Studio 的 Hyper-V VM，安裝 Git／Node／Rust 後建立基準檢查點，再驗證 `package-windows.ps1` 的首次安裝流程。
 
 包內有 EXE、設定、README、LICENSE、第三方說明及 hash manifest。`ConfigPath` 只決定旁置 TOML，不嵌入 binary；私有 bootstrap 已退役，啟用會拒絕。`-SkipBuild` 沿用 binary，需另核對來源，不能代表新建置。腳本使用 Rust path remap 避免內嵌建置者 home／專案路徑。
 

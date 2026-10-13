@@ -62,9 +62,10 @@ cargo --version
 
 ## 4. 在 VM 內驗證打包
 
-回到 **VM 內**，取得包含自動安裝修正的分支並執行打包：
+回到 **VM 內**，先切到使用者目錄，再取得包含自動安裝修正的分支並執行打包。系統管理員 PowerShell 預設位於 `C:\Windows\System32`，直接 clone 會因無寫入權限失敗：
 
 ```powershell
+Set-Location $HOME
 git clone --branch feature/windows-clean-vm-test https://github.com/pro5251/art-term.git
 Set-Location art-term
 .\scripts\package-windows.ps1
@@ -87,6 +88,8 @@ Set-Location art-term
 - `Run as administrator`：目前主機 PowerShell 沒有管理 Hyper-V 的權限；請用系統管理員 PowerShell 重跑。
 - `Default Switch was not found`：執行 `Get-VMSwitch`，用現有可上網的交換器名稱傳入 `-SwitchName`。
 - `Checkpoint` 無法連入 VM：確認 VM 已啟動、Windows 安裝完成，並使用 VM 內帳號的**密碼**登入 PowerShell Direct。
+- `could not create work tree dir 'art-term': Permission denied`：目前目錄沒有寫入權限，常見於系統管理員 PowerShell 的預設位置 `C:\Windows\System32`。用 `Get-Location` 確認後，`Set-Location $HOME` 再 clone；不要為此修改系統目錄權限。若 `art-term` 已存在且由其他帳號建立，刪除後重新 clone。
+- `Missing build tools`：打包腳本在建置前檢查 `node`、`npm.cmd`、`cargo`、`rustc`，並會先重新讀取系統 PATH（涵蓋剛用 WinGet 安裝但未重開的視窗）。仍找不到時依訊息中的 `winget install` 安裝，重開 PowerShell 後重跑。`Rust host is ...` 表示不是 MSVC 工具鏈，執行 `rustup default stable-x86_64-pc-windows-msvc`。
 - `Checkpoint` 報告已有 Visual Studio：這台 VM 已不符合乾淨基準；請使用新的 VM，或回到更早的檢查點。
 
 參考：[Hyper-V PowerShell 建立 VM](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/powershell)、[PowerShell Direct](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/powershell-direct)、[檢查點](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/checkpoints)。

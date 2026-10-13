@@ -66,7 +66,7 @@ cargo --version
 
 ```powershell
 Set-Location $HOME
-git clone --branch feature/windows-clean-vm-test https://github.com/pro5251/art-term.git
+git clone --branch feature/windows-packaging https://github.com/pro5251/art-term.git
 Set-Location art-term
 .\scripts\package-windows.ps1
 ```

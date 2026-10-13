@@ -55,8 +55,8 @@ function Invoke-RegressionCheck {
 
 Push-Location $repoRoot
 try {
-    $null = Get-Command npm.cmd -ErrorAction Stop
-    $null = Get-Command cargo -ErrorAction Stop
+    . "$PSScriptRoot/build-prerequisites.ps1"
+    Assert-ArtTermBuildTools -Tools node, npm, cargo
     if ($Suite -ne 'Unit') {
         if (Get-Process -Name 'art-term-gui' -ErrorAction SilentlyContinue) {
             throw 'Close your existing art-term window before running native E2E; this script will not stop it.'

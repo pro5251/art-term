@@ -71,6 +71,8 @@ try {
     $manifestPath = Join-Path $apkRoot 'build-manifest.json'
     if (-not $SkipBuild) {
         . "$PSScriptRoot/build-paths.ps1"
+        . "$PSScriptRoot/build-prerequisites.ps1"
+        Assert-ArtTermBuildTools -Tools node, npm, cargo
         $env:CARGO_ENCODED_RUSTFLAGS = Get-ArtTermBuildRustFlags -ProjectRoot $repoRoot -AndroidTarget 'x86_64'
         $npm = @(Get-Command npm.cmd -CommandType Application)[0].Source
         $node = @(Get-Command node -CommandType Application)[0].Source

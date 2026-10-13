@@ -89,7 +89,7 @@ Set-Location art-term
 - `Default Switch was not found`：執行 `Get-VMSwitch`，用現有可上網的交換器名稱傳入 `-SwitchName`。
 - `Checkpoint` 無法連入 VM：確認 VM 已啟動、Windows 安裝完成，並使用 VM 內帳號的**密碼**登入 PowerShell Direct。
 - `could not create work tree dir 'art-term': Permission denied`：目前目錄沒有寫入權限，常見於系統管理員 PowerShell 的預設位置 `C:\Windows\System32`。用 `Get-Location` 確認後，`Set-Location $HOME` 再 clone；不要為此修改系統目錄權限。若 `art-term` 已存在且由其他帳號建立，刪除後重新 clone。
-- `Missing build tools`：打包腳本在建置前檢查 `node`、`npm.cmd`、`cargo`、`rustc`，並會先重新讀取系統 PATH（涵蓋剛用 WinGet 安裝但未重開的視窗）。仍找不到時依訊息中的 `winget install` 安裝，重開 PowerShell 後重跑。`Rust host is ...` 表示不是 MSVC 工具鏈，執行 `rustup default stable-x86_64-pc-windows-msvc`。
+- `Missing build tools`：打包、回歸測試與 Android 建置腳本在建置前檢查 `node`、`npm.cmd`、`cargo`、`rustc`，並先重新讀取系統 PATH（涵蓋剛用 WinGet 安裝但未重開的視窗）。仍找不到時列出缺少的工具與 `winget install` 指令；在互動式 PowerShell 會詢問 `Install them now with WinGet? [Y/n]`，回答 Y 直接安裝後繼續，否則依指令安裝、重開 PowerShell 後重跑。`Rust host is ...` 表示不是 MSVC 工具鏈，執行 `rustup default stable-x86_64-pc-windows-msvc`。
 - `Checkpoint` 報告已有 Visual Studio：這台 VM 已不符合乾淨基準；請使用新的 VM，或回到更早的檢查點。
 
 參考：[Hyper-V PowerShell 建立 VM](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/powershell)、[PowerShell Direct](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/powershell-direct)、[檢查點](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/checkpoints)。

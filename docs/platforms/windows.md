@@ -36,7 +36,7 @@ Windows PC                                      Remote Host
 
 AI 的測試分層、功能對照與操作細節見 [Windows 回歸測試](windows-regression.md)。
 
-建置需要 PowerShell、Git、Rust MSVC、Node/npm；打包腳本建置前先確認 Node、npm、cargo、rustc 可執行且 Rust host 為 x64 MSVC，缺少時列出工具及安裝指令後停止；再檢查 Visual Studio C++ Build Tools 與 Windows SDK，缺少時透過 WinGet（或 Microsoft 官方安裝程式）安裝 Build Tools，或用 Visual Studio Installer 對既有安裝補上「Desktop development with C++」工作負載及建議元件。首次安裝需要網路及 Windows 系統管理員核准，且應先關閉正在執行的 Visual Studio。可從一般 PowerShell 執行；腳本會載入 x64 Developer PowerShell 環境，並確認選到 Microsoft linker 與 Windows SDK。前端檢查確認畫面程式可用，Rust 測試檢查共用核心，最後封裝把兩者組成同一份 Windows 交付。一般單元測試與 fixture（隔離的模擬環境）不需要私人 Host；它們不能驗證正式 Host 的 TLS 或真實網路。
+建置需要 PowerShell、Git、Rust MSVC、Node/npm；打包腳本建置前先確認 Node、npm、cargo、rustc 可執行且 Rust host 為 x64 MSVC，缺少時列出工具及 WinGet 安裝指令，互動式 PowerShell 會詢問是否立即安裝，否則停止；再檢查 Visual Studio C++ Build Tools 與 Windows SDK，缺少時透過 WinGet（或 Microsoft 官方安裝程式）安裝 Build Tools，或用 Visual Studio Installer 對既有安裝補上「Desktop development with C++」工作負載及建議元件。首次安裝需要網路及 Windows 系統管理員核准，且應先關閉正在執行的 Visual Studio。可從一般 PowerShell 執行；腳本會載入 x64 Developer PowerShell 環境，並確認選到 Microsoft linker 與 Windows SDK。前端檢查確認畫面程式可用，Rust 測試檢查共用核心，最後封裝把兩者組成同一份 Windows 交付。一般單元測試與 fixture（隔離的模擬環境）不需要私人 Host；它們不能驗證正式 Host 的 TLS 或真實網路。
 
 ```text
 Vue / TypeScript ----> frontend checks / build --+

@@ -26,6 +26,7 @@ if ($hasExistingPackage) {
     if (Test-Path -LiteralPath $outputRoot) { throw "Temporary package directory already exists: $outputRoot" }
 }
 . "$PSScriptRoot/build-paths.ps1"
+. "$PSScriptRoot/build-prerequisites.ps1"
 function Get-VsInstallation {
     param([string]$Vswhere, [switch]$RequireCpp)
     if (-not (Test-Path -LiteralPath $Vswhere)) { return $null }
@@ -110,36 +111,13 @@ function Initialize-MsvcBuildEnvironment {
         if (-not $env:WindowsSdkDir) { throw 'Windows SDK is still unavailable after installation. Check Visual Studio Installer logs.' }
     }
 }
-function Assert-BuildPrerequisites {
-    $tools = [ordered]@{
-        'node.exe'  = 'winget install --id OpenJS.NodeJS.LTS --exact --source winget'
-        'npm.cmd'   = 'winget install --id OpenJS.NodeJS.LTS --exact --source winget'
-        'cargo.exe' = 'winget install --id Rustlang.Rustup --exact --source winget'
-        'rustc.exe' = 'winget install --id Rustlang.Rustup --exact --source winget'
-    }
-    $missing = @($tools.Keys | Where-Object { -not (Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue) })
-    if ($missing) {
-        # Tools installed after this shell started are only on the registry PATH.
-        $env:Path = (@($env:Path, [Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { $_ }) -join ';'
-        $missing = @($tools.Keys | Where-Object { -not (Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue) })
-    }
-    if ($missing) {
-        $hints = $missing | ForEach-Object { "  $_ : $($tools[$_])" }
-        throw ("Missing build tools:`n{0}`nInstall them, reopen PowerShell, then rerun this script." -f ($hints -join "`n"))
-    }
-    $rustHost = (& rustc.exe -vV | Select-String '^host: ').ToString().Substring(6)
-    if ($rustHost -ne 'x86_64-pc-windows-msvc') {
-        throw "Rust host is $rustHost; run 'rustup default stable-x86_64-pc-windows-msvc' and rerun this script."
-    }
-    Write-Host "Build tools: node $(& node.exe --version), npm $(& npm.cmd --version), $(& cargo.exe --version)"
-}
 $previousRustFlags = $env:CARGO_ENCODED_RUSTFLAGS
 $previousConfig = $env:ART_TERM_CONNECTIONS_FILE
 $env:CARGO_ENCODED_RUSTFLAGS = Get-ArtTermBuildRustFlags -ProjectRoot $projectRoot
 $env:ART_TERM_CONNECTIONS_FILE = $ConfigPath
 try {
     if (-not $SkipBuild) {
-        Assert-BuildPrerequisites
+        Assert-ArtTermBuildTools -RequireMsvcHost
         Initialize-MsvcBuildEnvironment
         Push-Location (Join-Path $projectRoot 'apps/desktop')
         try {

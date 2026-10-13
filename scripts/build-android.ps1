@@ -17,6 +17,8 @@ $OutputApk = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPS
 $SigningRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SigningRoot)
 $previousConfig = $env:ART_TERM_CONNECTIONS_FILE
 . "$PSScriptRoot/build-paths.ps1"
+. "$PSScriptRoot/build-prerequisites.ps1"
+Assert-ArtTermBuildTools -Tools node, npm, cargo
 $previousRustFlags = $env:CARGO_ENCODED_RUSTFLAGS
 $env:CARGO_ENCODED_RUSTFLAGS = Get-ArtTermBuildRustFlags -ProjectRoot $repoRoot -AndroidTarget $Target
 $env:ART_TERM_CONNECTIONS_FILE = $null
